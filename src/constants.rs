@@ -25,7 +25,7 @@ use curve::AffineNielsPoint;
 use curve::CompressedEdwardsY;
 use curve::EdwardsBasepointTable;
 #[cfg(feature = "yolocrypto")]
-use decaf::{DecafPoint, DecafBasepointTable};
+use ristretto::{RistrettoPoint, RistrettoBasepointTable};
 use scalar::Scalar;
 
 #[cfg(feature="radix_51")]
@@ -155,9 +155,9 @@ pub const BASE_CMPRSSD: CompressedEdwardsY =
                         0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
                         0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66]);
 
-/// The Ed25519 basepoint, as a `DecafPoint`.
+/// The Ed25519 basepoint, as a `RistrettoPoint`.
 #[cfg(feature = "yolocrypto")]
-pub const DECAF_ED25519_BASEPOINT: DecafPoint = DecafPoint(ED25519_BASEPOINT);
+pub const RISTRETTO_ED25519_BASEPOINT: RistrettoPoint = RistrettoPoint(ED25519_BASEPOINT);
 
 /// Basepoint has y = 4/5.
 #[cfg(not(feature="radix_51"))]
@@ -409,8 +409,8 @@ pub const bi: [AffineNielsPoint; 8] = [
 
 #[cfg(feature = "yolocrypto")]
 /// The Ed25519 basepoint
-pub const DECAF_ED25519_BASEPOINT_TABLE: DecafBasepointTable
-    = DecafBasepointTable(ED25519_BASEPOINT_TABLE);
+pub const RISTRETTO_ED25519_BASEPOINT_TABLE: RistrettoBasepointTable
+    = RistrettoBasepointTable(ED25519_BASEPOINT_TABLE);
 
 /// Table containing precomputed multiples of the basepoint `B = (x,4/5)`.
 ///
