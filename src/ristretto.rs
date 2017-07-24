@@ -34,6 +34,7 @@ use constants;
 use field::FieldElement;
 use subtle::CTAssignable;
 use subtle::CTNegatable;
+use subtle::CTEq;
 use subtle;
 
 use core::ops::{Add, Sub, Neg};
@@ -399,9 +400,23 @@ impl Identity for RistrettoPoint {
 /// with cofactor 8, not just cofactor 4, and add a CT equality function?
 impl PartialEq for RistrettoPoint {
     fn eq(&self, other: &RistrettoPoint) -> bool {
-        let  self_compressed =  self.compress();
-        let other_compressed = other.compress();
-        self_compressed == other_compressed
+        self.ct_eq(other) == 1u8
+    }
+}
+
+impl CTEq for RistrettoPoint {
+    /// Test equality between two `RistrettoPoint`s.
+    ///
+    /// # Returns
+    ///
+    /// `1u8` if the two `RistrettoPoint`s are equal, and `0u8` otherwise.
+    fn ct_eq(&self, other: &RistrettoPoint) -> u8 {
+        let X1Y2 = &self.0.X * &other.0.Y;
+        let Y1X2 = &self.0.Y * &other.0.X;
+        let X1X2 = &self.0.X * &other.0.X;
+        let Y1Y2 = &self.0.Y * &other.0.Y;
+        
+        X1Y2.ct_eq(&Y1X2) | X1X2.ct_eq(&Y1Y2)
     }
 }
 
