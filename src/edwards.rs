@@ -168,7 +168,7 @@ impl Serialize for ExtendedPoint {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: Serializer
     {
-        serializer.serialize_bytes(self.compress_edwards().as_bytes())
+        serializer.serialize_bytes(self.compress().as_bytes())
     }
 }
 
