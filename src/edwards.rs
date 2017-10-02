@@ -217,10 +217,10 @@ impl<'de> Deserialize<'de> for ExtendedPoint {
 #[derive(Copy, Clone)]
 #[allow(missing_docs)]
 pub struct ExtendedPoint {
-    pub X: FieldElement,
-    pub Y: FieldElement,
-    pub Z: FieldElement,
-    pub T: FieldElement,
+    pub (crate) X: FieldElement,
+    pub (crate) Y: FieldElement,
+    pub (crate) Z: FieldElement,
+    pub (crate) T: FieldElement,
 }
 
 /// A `ProjectivePoint` is a point on the curve in 𝗣²(𝔽ₚ).
@@ -237,10 +237,10 @@ pub struct ProjectivePoint {
 #[derive(Copy, Clone)]
 #[allow(missing_docs)]
 pub struct CompletedPoint {
-    pub X: FieldElement,
-    pub Y: FieldElement,
-    pub Z: FieldElement,
-    pub T: FieldElement,
+    pub (crate) X: FieldElement,
+    pub (crate) Y: FieldElement,
+    pub (crate) Z: FieldElement,
+    pub (crate) T: FieldElement,
 }
 
 /// A pre-computed point in the affine model for the curve, represented as
@@ -251,9 +251,9 @@ pub struct CompletedPoint {
 #[derive(Copy, Clone, Eq, PartialEq)]
 #[allow(missing_docs)]
 pub struct AffineNielsPoint {
-    pub y_plus_x:  FieldElement,
-    pub y_minus_x: FieldElement,
-    pub xy2d:      FieldElement,
+    pub (crate) y_plus_x:  FieldElement,
+    pub (crate) y_minus_x: FieldElement,
+    pub (crate) xy2d:      FieldElement,
 }
 
 /// A pre-computed point in the P³(𝔽ₚ) model for the curve, represented as
