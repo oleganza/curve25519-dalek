@@ -17,7 +17,6 @@
 use field_32bit::FieldElement32;
 use edwards::ExtendedPoint;
 use edwards::AffineNielsPoint;
-use edwards::EdwardsBasepointTable;
 
 /// Edwards `d` value, equal to `-121665/121666 mod p`.
 pub(crate) const EDWARDS_D: FieldElement32       = FieldElement32([
