@@ -11,26 +11,45 @@
 use core::fmt::Debug;
 use core::ops::{Index, IndexMut};
 
-use constants;
+use constants::r;
+use constants::rr;
+use constants::L;
+use constants::LFACTOR;
 
-/// The `Scalar64` struct represents an element in ℤ/lℤ as 5 52-bit limbs
+use scalar_montgomery::RInverse;
+use scalar_montgomery::NoFactor;
+use scalar_montgomery::R;
+use scalar_montgomery::RR;
+use scalar_montgomery::MontgomeryFactor;
+use scalar_montgomery::MontgomeryExpansion;
+use scalar_montgomery::MontgomeryReduction;
+
+/// Each `Limb` in a `Scalar64` is a 64-bit integer, of which 52 bits are used.
+pub type Limb = u64;
+
+/// A `Scalar64` has five `Limb`s.
+pub type Limbs = [Limb; 5];
+
+pub type ExpandedLimbs = [u128; 9];
+
+/// The `Scalar64` struct represents an element in ℤ/lℤ as five 52-bit limbs.
 #[derive(Copy,Clone)]
-pub struct Scalar64(pub [u64; 5]);
+pub struct Scalar64<F: MontgomeryFactor>(pub Limbs);
 
-impl Debug for Scalar64 {
+impl<F> Debug for Scalar64<F> where F: MontgomeryFactor {
     fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
         write!(f, "Scalar64: {:?}", &self.0[..])
     }
 }
 
-impl Index<usize> for Scalar64 {
+impl<F> Index<usize> for Scalar64<F> where F: MontgomeryFactor {
     type Output = u64;
     fn index(&self, _index: usize) -> &u64 {
         &(self.0[_index])
     }
 }
 
-impl IndexMut<usize> for Scalar64 {
+impl<F> IndexMut<usize> for Scalar64<F> where F: MontgomeryFactor {
     fn index_mut(&mut self, _index: usize) -> &mut u64 {
         &mut (self.0[_index])
     }
@@ -42,14 +61,14 @@ fn m(x: u64, y: u64) -> u128 {
     (x as u128) * (y as u128)
 }
 
-impl Scalar64 {
+impl<F> Scalar64<F> where F: MontgomeryFactor {
     /// Return the zero scalar
-    pub fn zero() -> Scalar64 {
+    pub fn zero() -> Scalar64<NoFactor> {
         Scalar64([0,0,0,0,0])
     }
 
     /// Unpack a 32 byte / 256 bit scalar into 5 52-bit limbs.
-    pub fn from_bytes(bytes: &[u8; 32]) -> Scalar64 {
+    pub fn from_bytes(bytes: &[u8; 32]) -> Scalar64<NoFactor> {
         let mut words = [0u64; 4];
         for i in 0..4 {
             for j in 0..8 {
@@ -71,7 +90,7 @@ impl Scalar64 {
     }
 
     /// Reduce a 64 byte / 512 bit scalar mod l
-    pub fn from_bytes_wide(bytes: &[u8; 64]) -> Scalar64 {
+    pub fn from_bytes_wide(bytes: &[u8; 64]) -> Scalar64<R> {
         let mut words = [064; 8];
         for i in 0..8 {
             for j in 0..8 {
@@ -94,8 +113,8 @@ impl Scalar64 {
         hi[3] = ((words[ 6] >> 32) | (words[ 7] << 32)) & mask;
         hi[4] =   words[ 7] >> 20                             ;
 
-        lo = Scalar64::montgomery_mul(&lo, &constants::R);  // (lo * R) / R = lo
-        hi = Scalar64::montgomery_mul(&hi, &constants::RR); // (hi * R^2) / R = hi * R
+        lo = Scalar64::montgomery_mul(&lo, &r); // (lo * R) / R = lo
+        hi = Scalar64::montgomery_mul(&hi, &r); // (hi * R^2) / R = hi * R
 
         Scalar64::add(&hi, &lo)
     }
@@ -141,7 +160,7 @@ impl Scalar64 {
     }
 
     /// Compute `a + b` (mod l)
-    pub fn add(a: &Scalar64, b: &Scalar64) -> Scalar64 {
+    pub fn add(a: &Scalar64<F>, b: &Scalar64<F>) -> Scalar64<F> {
         let mut sum = Scalar64::zero();
         let mask = (1u64 << 52) - 1;
 
@@ -153,11 +172,11 @@ impl Scalar64 {
         }
 
         // subtract l if the sum is >= l
-        Scalar64::sub(&sum, &constants::L)
+        Scalar64::sub(&sum, &L)
     }
 
     /// Compute `a - b` (mod l)
-    pub fn sub(a: &Scalar64, b: &Scalar64) -> Scalar64 {
+    pub fn sub(a: &Scalar64<F>, b: &Scalar64<F>) -> Scalar64<F> {
         let mut difference = Scalar64::zero();
         let mask = (1u64 << 52) - 1;
 
@@ -172,16 +191,24 @@ impl Scalar64 {
         let underflow_mask = ((borrow >> 63) ^ 1).wrapping_sub(1);
         let mut carry: u64 = 0;
         for i in 0..5 {
-            carry = (carry >> 52) + difference[i] + (constants::L[i] & underflow_mask);
+            carry = (carry >> 52) + difference[i] + (L[i] & underflow_mask);
             difference[i] = carry & mask;
         }
 
         difference
     }
 
-    /// Compute `a * b`
-    #[inline(always)]
-    pub (crate) fn mul_internal(a: &Scalar64, b: &Scalar64) -> [u128; 9] {
+    /// Compute a widening multiplication of `a * b`.
+    ///
+    /// # Inputs
+    ///
+    /// - `a` is a `Scalar64<NoFactor>`, that is, a scalar in non-Montgomery form.
+    /// - `b` is a `Scalar64<NoFactor>`, that is, a scalar in non-Montgomery form.
+    ///
+    /// # Returns
+    ///
+    /// A set of `ExpandedLimbs`.
+    pub (crate) fn mul_internal(a: &Scalar64<F>, b: &Scalar64<F>) -> ExpandedLimbs {
         let mut z = [0u128; 9];
 
         z[0] = m(a[0],b[0]);
@@ -199,7 +226,7 @@ impl Scalar64 {
 
     /// Compute `a^2`
     #[inline(always)]
-    fn square_internal(a: &Scalar64) -> [u128; 9] {
+    fn square_internal(a: &Scalar64<F>) -> ExpandedLimbs {
         let aa = [
             a[0]*2,
             a[1]*2,
@@ -220,14 +247,16 @@ impl Scalar64 {
         ]
     }
 
-    /// Compute `limbs/R` (mod l), where R is the Montgomery modulus 2^260
+    /// Compute `limbs/r` (mod l), where `r` is the Montgomery modulus, `2^260 (mod l)`.
     #[inline(always)]
-    pub (crate) fn montgomery_reduce(limbs: &[u128; 9]) -> Scalar64 {
+    pub (crate) fn montgomery_reduce(s: &Scalar64<F>) -> Scalar64<<F as MontgomeryReduction>::Output>
+           where F: MontgomeryFactor + MontgomeryReduction {
+        let limbs = s.0;
 
         #[inline(always)]
         fn part1(sum: u128) -> (u128, u64) {
-            let p = (sum as u64).wrapping_mul(constants::LFACTOR) & ((1u64 << 52) - 1);
-            ((sum + m(p,constants::L[0])) >> 52, p)
+            let p = (sum as u64).wrapping_mul(LFACTOR) & ((1u64 << 52) - 1);
+            ((sum + m(p,L[0])) >> 52, p)
         }
 
         #[inline(always)]
@@ -237,7 +266,7 @@ impl Scalar64 {
         }
 
         // note: l3 is zero, so its multiplies can be skipped
-        let l = &constants::L;
+        let l = &L;
 
         // the first half computes the Montgomery adjustment factor n, and begins adding n*l to make limbs divisible by R
         let (carry, n0) = part1(        limbs[0]);
@@ -259,39 +288,39 @@ impl Scalar64 {
 
     /// Compute `a * b` (mod l)
     #[inline(never)]
-    pub fn mul(a: &Scalar64, b: &Scalar64) -> Scalar64 {
+    pub fn mul(a: &Scalar64<F>, b: &Scalar64<F>) -> Scalar64<<F as MontgomeryExpansion>::Output> {
         let ab = Scalar64::montgomery_reduce(&Scalar64::mul_internal(a, b));
-        Scalar64::montgomery_reduce(&Scalar64::mul_internal(&ab, &constants::RR))
+        Scalar64::montgomery_reduce(&Scalar64::mul_internal(&ab, &rr))
     }
 
     /// Compute `a^2` (mod l)
     #[inline(never)]
-    pub fn square(&self) -> Scalar64 {
+    pub fn square(&self) -> Scalar64<<F as MontgomeryExpansion>::Output> {
         let aa = Scalar64::montgomery_reduce(&Scalar64::square_internal(self));
-        Scalar64::montgomery_reduce(&Scalar64::mul_internal(&aa, &constants::RR))
+        Scalar64::montgomery_reduce(&Scalar64::mul_internal(&aa, &rr))
     }
 
     /// Compute `(a * b) / R` (mod l), where R is the Montgomery modulus 2^260
     #[inline(never)]
-    pub fn montgomery_mul(a: &Scalar64, b: &Scalar64) -> Scalar64 {
+    pub fn montgomery_mul(a: &Scalar64<F>, b: &Scalar64<F>) -> Scalar64<<F as MontgomeryExpansion>::Output> {
         Scalar64::montgomery_reduce(&Scalar64::mul_internal(a, b))
     }
 
     /// Compute `(a^2) / R` (mod l) in Montgomery form, where R is the Montgomery modulus 2^260
     #[inline(never)]
-    pub fn montgomery_square(&self) -> Scalar64 {
+    pub fn montgomery_square(&self) -> Scalar64<<F as MontgomeryExpansion>::Output> {
         Scalar64::montgomery_reduce(&Scalar64::square_internal(self))
     }
 
     /// Puts a Scalar64 in to Montgomery form, i.e. computes `a*R (mod l)`
     #[inline(never)]
-    pub fn to_montgomery(&self) -> Scalar64 {
-        Scalar64::montgomery_mul(self, &constants::RR)
+    pub fn to_montgomery(&self) -> Scalar64<<F as MontgomeryExpansion>::Output> {
+        Scalar64::montgomery_mul(self, &rr)
     }
 
     /// Takes a Scalar64 out of Montgomery form, i.e. computes `a/R (mod l)`
     #[inline(never)]
-    pub fn from_montgomery(&self) -> Scalar64 {
+    pub fn from_montgomery(&self) -> Scalar64<<F as MontgomeryReduction>::Output> {
         let mut limbs = [0u128; 9];
         for i in 0..5 {
             limbs[i] = self[i] as u128;
@@ -311,53 +340,53 @@ mod test {
     /// x = 14474011154664524427946373126085988481658748083205070504932198000989141204991
     /// x = 7237005577332262213973186563042994240801631723825162898930247062703686954002 mod l
     /// x = 3057150787695215392275360544382990118917283750546154083604586903220563173085*R mod l in Montgomery form
-    pub static X: Scalar64 = Scalar64(
+    pub static X: Scalar64<R> = Scalar64(
         [0x000fffffffffffff, 0x000fffffffffffff, 0x000fffffffffffff, 0x000fffffffffffff,
          0x00001fffffffffff]);
 
     /// x^2 = 3078544782642840487852506753550082162405942681916160040940637093560259278169 mod l
-    pub static XX: Scalar64 = Scalar64(
+    pub static XX: Scalar64<RR> = Scalar64(
         [0x0001668020217559, 0x000531640ffd0ec0, 0x00085fd6f9f38a31, 0x000c268f73bb1cf4,
          0x000006ce65046df0]);
 
     /// x^2 = 4413052134910308800482070043710297189082115023966588301924965890668401540959*R mod l in Montgomery form
-    pub static XX_MONT: Scalar64 = Scalar64(
+    pub static XX_MONT: Scalar64<RR> = Scalar64( //XXX really RR? or RRR? —isis
         [0x000c754eea569a5c, 0x00063b6ed36cb215, 0x0008ffa36bf25886, 0x000e9183614e7543,
          0x0000061db6c6f26f]);
 
     /// y = 6145104759870991071742105800796537629880401874866217824609283457819451087098
-    pub static Y: Scalar64 = Scalar64(
+    pub static Y: Scalar64<R> = Scalar64(
         [0x000b75071e1458fa, 0x000bf9d75e1ecdac, 0x000433d2baf0672b, 0x0005fffcc11fad13,
          0x00000d96018bb825]);
 
     /// x*y = 36752150652102274958925982391442301741 mod l
-    pub static XY: Scalar64 = Scalar64(
+    pub static XY: Scalar64<NoFactor> = Scalar64(
         [0x000ee6d76ba7632d, 0x000ed50d71d84e02, 0x00000000001ba634, 0x0000000000000000,
          0x0000000000000000]);
 
     /// x*y = 658448296334113745583381664921721413881518248721417041768778176391714104386*R mod l in Montgomery form
-    pub static XY_MONT: Scalar64 = Scalar64(
+    pub static XY_MONT: Scalar64<NoFactor> = Scalar64(
         [0x0006d52bf200cfd5, 0x00033fb1d7021570, 0x000f201bc07139d8, 0x0001267e3e49169e,
          0x000007b839c00268]);
 
     /// a = 2351415481556538453565687241199399922945659411799870114962672658845158063753
-    pub static A: Scalar64 = Scalar64(
+    pub static A: Scalar64<R> = Scalar64(
         [0x0005236c07b3be89, 0x0001bc3d2a67c0c4, 0x000a4aa782aae3ee, 0x0006b3f6e4fec4c4,
          0x00000532da9fab8c]);
 
     /// b = 4885590095775723760407499321843594317911456947580037491039278279440296187236
-    pub static B: Scalar64 = Scalar64(
+    pub static B: Scalar64<R> = Scalar64(
         [0x000d3fae55421564, 0x000c2df24f65a4bc, 0x0005b5587d69fb0b, 0x00094c091b013b3b,
          0x00000acd25605473]);
 
     /// a+b = 0
     /// a-b = 4702830963113076907131374482398799845891318823599740229925345317690316127506
-    pub static AB: Scalar64 = Scalar64(
+    pub static AB: Scalar64<RR> = Scalar64(
         [0x000a46d80f677d12, 0x0003787a54cf8188, 0x0004954f0555c7dc, 0x000d67edc9fd8989,
          0x00000a65b53f5718]);
 
     // c = (2^512 - 1) % l = 1627715501170711445284395025044413883736156588369414752970002579683115011840
-    pub static C: Scalar64 = Scalar64(
+    pub static C: Scalar64<RR> = Scalar64(
         [0x000611e3449c0f00, 0x000a768859347a40, 0x0007f5be65d00e1b, 0x0009a3dceec73d21,
          0x00000399411b7c30]);
 

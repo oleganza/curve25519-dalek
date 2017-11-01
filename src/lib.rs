@@ -73,6 +73,7 @@ mod field_32bit;
 mod field_64bit;
 
 pub mod scalar;
+pub mod scalar_montgomery;
 #[cfg(not(feature="radix_51"))]
 mod scalar_32bit;
 #[cfg(feature="radix_51")]

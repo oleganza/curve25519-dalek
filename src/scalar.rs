@@ -46,6 +46,8 @@ use subtle::slices_equal;
 use subtle::ConditionallyAssignable;
 use subtle::Equal;
 
+use scalar_montgomery::NoFactor;
+
 /// The `Scalar` struct represents an element in ℤ/lℤ, where
 ///
 /// l = 2^252 + 27742317777372353535851937790883648493
@@ -229,13 +231,13 @@ impl<'de> Deserialize<'de> for Scalar {
 
 /// An `UnpackedScalar` represents an element of the field GF(l), optimized for speed.
 #[cfg(feature="radix_51")]
-type UnpackedScalar = Scalar64;
+type UnpackedScalar<F = NoFactor> = Scalar64<F>;
 #[cfg(feature="radix_51")]
 use scalar_64bit::*;
 
 /// An `UnpackedScalar` represents an element of the field GF(l), optimized for speed.
 #[cfg(not(feature="radix_51"))]
-type UnpackedScalar = Scalar32;
+type UnpackedScalar<F = NoFactor> = Scalar32<F>;
 #[cfg(not(feature="radix_51"))]
 use scalar_32bit::*;
 
@@ -742,7 +744,7 @@ mod test {
             bignum[32+i] = X[i];
         }
         // x + 2^256x (mod l)
-        //         = 3958878930004874126169954872055634648693766179881526445624823978500314864344
+        //       = 3958878930004874126169954872055634648693766179881526445624823978500314864344
         let expected = Scalar([216, 154, 179, 139, 210, 121,   2,  71,
                                 69,  99, 158, 216,  23, 173,  63, 100,
                                204,   0,  91,  50, 219, 153,  57, 249,
@@ -753,8 +755,9 @@ mod test {
         assert_eq!(reduced.0, expected.0);
 
         //  (x + 2^256x) * R
-        let interim = UnpackedScalar::mul_internal(&UnpackedScalar::from_bytes_wide(&bignum),
-                                                   &constants::R);
+        let interim = UnpackedScalar::mul_internal(
+            &UnpackedScalar::from_bytes_wide(&bignum),
+            &constants::r);
         // ((x + 2^256x) * R) / R  (mod l)
         let montgomery_reduced = UnpackedScalar::montgomery_reduce(&interim);
 
