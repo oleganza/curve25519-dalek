@@ -75,7 +75,7 @@ pub mod ristretto;
 
 // Other miscelaneous utilities.
 
-pub mod utils;
+mod utils;
 
 // Low-level curve and point constants, as well as pre-computed curve group elements.
 
