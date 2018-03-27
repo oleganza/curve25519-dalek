@@ -10,6 +10,8 @@
 
 pub mod window;
 
+pub mod digits;
+
 pub mod variable_base;
 
 #[cfg(feature="precomputed_tables")]

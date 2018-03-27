@@ -8,6 +8,8 @@
 // - Isis Agora Lovecruft <isis@patternsinthevoid.net>
 // - Henry de Valence <hdevalence@hdevalence.ca>
 
+#![feature(test)]
+
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #![cfg_attr(feature = "alloc", feature(alloc))]
@@ -29,6 +31,8 @@
 // External dependencies:
 //------------------------------------------------------------------------
 
+extern crate test;
+
 #[cfg(feature = "std")]
 extern crate core;
 
@@ -48,6 +52,8 @@ extern crate stdsimd;
 // generics land.
 extern crate digest;
 extern crate generic_array;
+
+extern crate byteorder;
 
 // Used for traits related to constant-time code.
 extern crate subtle;
