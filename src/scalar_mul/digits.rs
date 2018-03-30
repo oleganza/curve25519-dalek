@@ -84,6 +84,8 @@ fn new_naf(x: &Scalar, w: usize) -> [i8;256] {
     let width = 1 << w;  // 2^w
     let window_mask = width - 1;  // w bits
     
+    let mut pos = 0;
+    let mut carry = 0;
     let words: [u64;5] = [
         LittleEndian::read_u64(&x.bytes[0..]),
         LittleEndian::read_u64(&x.bytes[8..]),
@@ -91,57 +93,35 @@ fn new_naf(x: &Scalar, w: usize) -> [i8;256] {
         LittleEndian::read_u64(&x.bytes[24..]),
         0 // extra word to avoid extra bounds check in the loop
     ];
-    // each time we slide to the end of the word we have to read bits from the next one.
-    // to make each loop over a word faster we can break it out in two: first one approaching 
-    // the end, but never overflowing, second one reading the bits from the next word as needed.
-    let mut pos = 0;
-    let mut carry = 0;
-    let mut u64_pos = 0;
-    let mut u64_idx = 0;
-    while u64_pos < 4 { // which u64 chunk to read
-        while u64_idx < (64 - w) { // which bit within that chunk, before the window overflows
-            let bit_buf = words[u64_pos];
-            let window = carry + (bit_buf >> u64_idx) & window_mask;
-            if window & 1 == 0 {
-                pos += 1;
-                u64_idx += 1;
-                continue;
-            }
-            if window < width/2 {
-                carry = 0;
-                naf[pos] = window as i8;
-            } else {
-                carry = 1;
-                naf[pos] = (window as i8) - (width as i8);
-            }
-            pos += w;
-            u64_idx += w;
-        }
-        while u64_idx < 64 { // which bit within that chunk, when the window overflows
-            let bit_buf = words[u64_pos];
-            let bit_buf2 = words[u64_pos+1];
+    while pos < 256 {
+        let u64_pos = pos / 64; // which u64 chunk to read
+        let u64_idx = pos % 64; // which bit within that chunk
+        let bit_buf = words[u64_pos];
+        let mut val = (bit_buf >> u64_idx) & window_mask;
+        // if we have some bits in the next word, and there is a next word, 
+        // then we should add them to the value
+        if u64_idx > (64 - w) {
             let extra_bits = w - (64 - u64_idx); // number of bits are in the next word
-            let window = carry + 
-                        ((bit_buf >> u64_idx) & window_mask) + 
-                        ((bit_buf2 & ((1<<extra_bits)-1)) << (w - extra_bits));
-            if window & 1 == 0 {
-                pos += 1;
-                u64_idx += 1;
-                continue;
-            }
-            if window < width/2 {
-                carry = 0;
-                naf[pos] = window as i8;
-            } else {
-                carry = 1;
-                naf[pos] = (window as i8) - (width as i8);
-            }
-            pos += w;
-            u64_idx += w;
+            let bit_buf_next = words[u64_pos + 1];
+            val += (bit_buf_next & ((1<<extra_bits)-1)) << (w - extra_bits);
         }
-        u64_pos = pos / 64;
-        u64_idx = pos % 64;
+        let window = carry + val;
+
+        if window & 1 == 0 {
+            pos += 1;
+            continue;
+        }
+
+        if window < width/2 {
+            carry = 0;
+            naf[pos] = window as i8;
+        } else {
+            carry = 1;
+            naf[pos] = (window as i8) - (width as i8);
+        }
+        pos += w;
     }
+
     naf
 }
 
